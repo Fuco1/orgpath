@@ -1,7 +1,9 @@
+;; TODO: add handling of tag/property queries
+;; TODO: add functions to recover: text, properties
 (defun orgpath-get (&optional query)
-  (-when-let (nodes (cddr (org-element-parse-buffer 'headline)))
-
-    )
+  (let* ((query (if (not (s-prefix-p "/" query)) (concat "//" query) query))
+         (parsed-query (orgpath-split query)))
+    (orgpath-filter parsed-query my-struct))
   )
 
 ;; /foo/bar/baz -> split into (foo bar baz), turn that into regexps, search for such header hierarchy
@@ -9,7 +11,7 @@
 ;; foo/bar -> bar under foo but at any depth
 ;; foo//bar -> bar any depth under foo at any depth
 
-(setq my-struct '(("foo" ("bar" ("baz")) ("brum" ("quux")) ("klask" ("brum"))) ("boo") ("zoo" ("tralala")) ("foo" ("bar" ("baz")))))
+(setq my-struct '(("foo" ("bar" ("baz")) ("brum" ("quux")) ("klask" ("brum"))) ("boo") ("zoo" ("tralala")) ("foo" ("bar" ("baz"))) ("alpha" ("bravo" ("foo" ("baz"))))))
 (setq my-struct '(("foo" ("bar" ("baz") ("qux")))))
 
 (defun orgpath-filter (query struct)
