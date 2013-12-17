@@ -5,6 +5,119 @@
     ;; adds only :begin and :raw-value properties to make it faster
     (orgpath-filter parsed-query (cddr (org-element-parse-buffer 'headline)))))
 
+(defun orgpath-parse-buffer ()
+  (let* ((headers-raw (org-map-entries (lambda () (cons (point) (org-heading-components)))))
+         (headers (--map (list 'headline (list :raw-value (nth 5 it) :begin (car it) :level (cadr it))) headers-raw))
+         (stack (cons nil nil))
+         (last-level 1))
+    (--each headers
+      (let ((current-level (plist-get (cadr it) :level)))
+        (cond
+         ((= current-level last-level)
+          (let ((current (car stack)))
+            (if (null current)
+                (push it (car stack))
+              (setcdr current (cons (car current) (cdr current)))
+              (setcar current it))))
+         ((> current-level last-level)
+          (push it (caar stack))
+          (push (caar stack) stack))
+         ((< current-level last-level)
+          (let ((diff (- last-level current-level)))
+            (dotimes (i diff) (pop stack))
+            (let ((current (car stack)))
+              (setcdr current (cons (car current) (cdr current)))
+              (setcar current it)))))
+        (setq last-level current-level)
+        (message "%s" stack)))
+    (my-tree-reverse stack)
+    ))
+
+(defun my-list-to-tree-end (list)
+  (let* ((last-level 1)
+         (start (cons nil nil))
+         (stack (cons start nil)))
+    (--each list
+      (let ((current-level (cadr it)))
+        (cond
+         ((= current-level last-level)
+          (let ((new-end (cons it nil)))
+            (if (null (caar stack))
+                (setcar (car stack) it)
+              (setcdr (car stack) new-end)
+              (setcar stack new-end))))
+         ((> current-level last-level)
+          (push (last (caar stack)) stack)
+          (let ((new-end (cons it nil)))
+            (setcdr (car stack) new-end)
+            (setcar stack new-end)))
+         ((< current-level last-level)
+          (let ((diff (- last-level current-level)))
+            (dotimes (i diff) (pop stack))
+            (let ((new-end (cons it nil)))
+              (setcdr (car stack) new-end)
+              (setcar stack new-end)))))
+        (setq last-level current-level)))
+    start))
+
+(defun my-tree-reverse (tree)
+  (cond
+   ((not tree) nil)
+   ((listp tree)
+    (--map (if (and (listp it)
+                    (numberp (cadr it)))
+               (nreverse (my-tree-reverse it))
+             (my-tree-reverse it)) tree))
+   (t tree)))
+
+;; prerobit tak aby to pripajalo do cdr
+(defun my-list-to-tree (list)
+  (let ((last-level 1)
+        (stack (cons nil nil)))
+    (--each list
+      (let ((current-level (cadr it)))
+        (cond
+         ((= current-level last-level)
+          (let ((current (car stack)))
+            (if (null current)
+                (push it (car stack))
+              (setcdr current (cons (car current) (cdr current)))
+              (setcar current it))))
+         ((> current-level last-level)
+          (push it (caar stack))
+          (push (caar stack) stack))
+         ((< current-level last-level)
+          (let ((diff (- last-level current-level)))
+            (dotimes (i diff) (pop stack))
+            (let ((current (car stack)))
+              (setcdr current (cons (car current) (cdr current)))
+              (setcar current it)))))
+        (setq last-level current-level)
+        (message "%s" stack)))
+    (--tree-reduce-from (-concat acc (list it)) nil stack)))
+
+(("top1" . 1
+  ("sub11" . 2
+   ("sub111" . 3))
+  ("sub12" . 2))
+ ("top2" . 1))
+
+(setq my-list '(("top1" 1) ("sub11" 2) ("sub111" 3) ("sub12" 2) ("sub13" 2) ("top2" 1) ("top3" 1) ("sub31" 2) ("sub32" 2) ("top4" 1)))
+
+((f (e d) c b) a)
+
+((foo bar) ((foo bar)))
+
+current
+nil
+((1))
+(((2) 1)) -> ((2)) je current
+
+stack
+nil
+((1))
+((2) (1))
+
 ;; /foo/bar/baz -> split into (foo bar baz), turn that into regexps, search for such header hierarchy
 ;; /foo//baz -> // means any depth
 ;; foo/bar -> bar under foo but at any depth
