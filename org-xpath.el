@@ -1,134 +1,59 @@
 (defun orgpath-get (&optional query)
-  (let* ((query (if (not (s-prefix-p "/" query)) (concat "//" query) query))
-         (parsed-query (orgpath-split query)))
-    ;; TODO: replace `org-element-parse-buffer' with something that
-    ;; adds only :begin and :raw-value properties to make it faster
-    (orgpath-filter parsed-query (cddr (org-element-parse-buffer 'headline)))))
+  (save-excursion
+    (let* ((query (if (not (s-prefix-p "/" query)) (concat "//" query) query))
+           (parsed-query (orgpath-split query)))
+      ;; TODO: replace `org-element-parse-buffer' with something that
+      ;; adds only :begin and :raw-value properties to make it faster
+      (orgpath-filter parsed-query
+                      (orgpath-parse-buffer)
+                      ;; (cddr (org-element-parse-buffer 'headline))
+                      ))))
 
 (defun orgpath-parse-buffer ()
-  (let* ((headers-raw (org-map-entries (lambda () (cons (point) (org-heading-components)))))
-         (headers (--map (list 'headline (list :raw-value (nth 5 it) :begin (car it) :level (cadr it))) headers-raw))
-         (stack (cons nil nil))
-         (last-level 1))
-    (--each headers
-      (let ((current-level (plist-get (cadr it) :level)))
-        (cond
-         ((= current-level last-level)
-          (let ((current (car stack)))
-            (if (null current)
-                (push it (car stack))
-              (setcdr current (cons (car current) (cdr current)))
-              (setcar current it))))
-         ((> current-level last-level)
-          (push it (caar stack))
-          (push (caar stack) stack))
-         ((< current-level last-level)
-          (let ((diff (- last-level current-level)))
-            (dotimes (i diff) (pop stack))
-            (let ((current (car stack)))
-              (setcdr current (cons (car current) (cdr current)))
-              (setcar current it)))))
-        (setq last-level current-level)
-        (message "%s" stack)))
-    (my-tree-reverse stack)
-    ))
+  "Parse an `org-mode' buffer and return a tree structure
+representing all headers and subheaders.
 
-(defun my-list-to-tree-end (list)
-  (let* ((last-level 1)
-         (start (cons nil nil))
-         (stack (cons start nil)))
-    (--each list
-      (let ((current-level (cadr it)))
-        (cond
-         ((= current-level last-level)
-          (let ((new-end (cons it nil)))
-            (if (null (caar stack))
-                (setcar (car stack) it)
-              (setcdr (car stack) new-end)
-              (setcar stack new-end))))
-         ((> current-level last-level)
-          (push (last (caar stack)) stack)
-          (let ((new-end (cons it nil)))
-            (setcdr (car stack) new-end)
-            (setcar stack new-end)))
-         ((< current-level last-level)
-          (let ((diff (- last-level current-level)))
-            (dotimes (i diff) (pop stack))
-            (let ((new-end (cons it nil)))
-              (setcdr (car stack) new-end)
-              (setcar stack new-end)))))
-        (setq last-level current-level)))
-    start))
-
-(defun my-tree-reverse (tree)
-  (cond
-   ((not tree) nil)
-   ((listp tree)
-    (--map (if (and (listp it)
-                    (numberp (cadr it)))
-               (nreverse (my-tree-reverse it))
-             (my-tree-reverse it)) tree))
-   (t tree)))
-
-;; prerobit tak aby to pripajalo do cdr
-(defun my-list-to-tree (list)
-  (let ((last-level 1)
-        (stack (cons nil nil)))
-    (--each list
-      (let ((current-level (cadr it)))
-        (cond
-         ((= current-level last-level)
-          (let ((current (car stack)))
-            (if (null current)
-                (push it (car stack))
-              (setcdr current (cons (car current) (cdr current)))
-              (setcar current it))))
-         ((> current-level last-level)
-          (push it (caar stack))
-          (push (caar stack) stack))
-         ((< current-level last-level)
-          (let ((diff (- last-level current-level)))
-            (dotimes (i diff) (pop stack))
-            (let ((current (car stack)))
-              (setcdr current (cons (car current) (cdr current)))
-              (setcar current it)))))
-        (setq last-level current-level)
-        (message "%s" stack)))
-    (--tree-reduce-from (-concat acc (list it)) nil stack)))
-
-(("top1" . 1
-  ("sub11" . 2
-   ("sub111" . 3))
-  ("sub12" . 2))
- ("top2" . 1))
+This is similar to `org-element-parse-buffer' but keeps only
+information relevant for further processing, and so it is
+significantly faster."
+  (flet ((add-to-end
+          (new-end stack)
+          (setcdr (car stack) new-end)
+          (setcar stack new-end)))
+    (let* ((headers-raw (org-map-entries (lambda () (cons (point) (org-heading-components)))))
+           (headers (--map (list 'headline (list :raw-value (nth 5 it)
+                                                 :begin (car it)
+                                                 :level (cadr it)
+                                                 )) headers-raw))
+           (last-level 1)
+           (start (cons nil nil))
+           (stack (cons start nil)))
+      ;; warning: this modifies headers by side effect
+      (--each headers
+        (let ((current-level (plist-get (cadr it) :level)))
+          (cond
+           ((= current-level last-level)
+            (add-to-end (cons it nil) stack))
+           ((> current-level last-level)
+            (push (last (caar stack)) stack)
+            (add-to-end (cons it nil) stack))
+           ((< current-level last-level)
+            (let ((diff (- last-level current-level)))
+              (dotimes (i diff) (pop stack)))
+            (add-to-end (cons it nil) stack)))
+          (setq last-level current-level)))
+      (cdr start))))
 
 (setq my-list '(("top1" 1) ("sub11" 2) ("sub111" 3) ("sub12" 2) ("sub13" 2) ("top2" 1) ("top3" 1) ("sub31" 2) ("sub32" 2) ("top4" 1)))
-
-((f (e d) c b) a)
-
-((foo bar) ((foo bar)))
-
-current
-nil
-((1))
-(((2) 1)) -> ((2)) je current
-
-stack
-nil
-((1))
-((2) (1))
 
 ;; /foo/bar/baz -> split into (foo bar baz), turn that into regexps, search for such header hierarchy
 ;; /foo//baz -> // means any depth
 ;; foo/bar -> bar under foo but at any depth
 ;; foo//bar -> bar any depth under foo at any depth
-;; /foo[STYLE=habit]text() -> select text content under this node
+;; /foo[STYLE=habit]/text() -> select text content under this node
 ;; foo/bar/[+work]/baz
 
 ;; /foo/bar/*[2] -> select 2nd child of /foo/bar whatever its header name is. Has some special values such as last() etc.
-
-(setq my-struct '(("foo" ("bar" ("baz")) ("brum" ("quux")) ("klask" ("brum"))) ("boo") ("zoo" ("tralala")) ("foo" ("bar" ("baz"))) ("alpha" ("bravo" ("foo" ("baz"))))))
-(setq my-struct '(("foo" ("bar" ("baz") ("qux")))))
 
 (defun orgpath-is-command (query-raw)
   (and query-raw
@@ -139,27 +64,45 @@ nil
   (save-match-data
     (cond
      ((string-match-p "text()" query-raw)
-      '(lambda (elem) (orgpath-command-text elem))
-      )
+      '(lambda (elem) (orgpath-command-text elem)))
      ((string-match "attr(\\(.+?\\))" query-raw)
       `(lambda (elem) (orgpath-command-property elem ,(match-string 1 query-raw)))))))
+
+(defun orgpath-last-match (query string)
+  (let ((last-match-data))
+    (with-temp-buffer
+      (insert string)
+      (goto-char (point-min))
+      (while (re-search-forward query nil t)
+        (setq last-match-data (match-data)))
+      (set-match-data (-map '1- last-match-data))
+      (match-beginning 0))))
 
 (defun orgpath-filter (query struct)
   (cond
    ((null query) struct)
    ;; otherwise filter
    (t (let* ((current-query-raw (car query))
+             ;; the query can contain [] with the regexp semantics,
+             ;; the attribute filter has to be the last [] block in
+             ;; the query.  If regexp [] is at the end, we need to add
+             ;; an empty block to signify this, e.g. "header[12][]"
              (current-query-re (save-match-data
                                  (let ((start (progn
                                                 (string-match "/*\\(.*?\\)\\'" current-query-raw)
                                                 (match-beginning 1)))
-                                       (end (string-match "\\[\\|\\'" current-query-raw)))
+                                       (end (or (and (string-match-p "\\]\\'" current-query-raw)
+                                                     (orgpath-last-match "\\[" current-query-raw))
+                                                (length current-query-raw))))
                                    (substring current-query-raw start end))))
              (current-query-attr (save-match-data
-                                   (when (string-match "\\[\\(.*?\\)\\]" current-query-raw)
+                                   (when (string-match "\\]\\'" current-query-raw)
                                      (let (todo-only)
                                        (cdr (org-make-tags-matcher
-                                             (orgpath-format-attributes (match-string 1 current-query-raw))))))))
+                                             (orgpath-format-attributes
+                                              (substring current-query-raw
+                                                         (1+ (orgpath-last-match "\\[" current-query-raw))
+                                                         (1- (length current-query-raw))))))))))
              (next-level (-keep (lambda (it)
                                   (orgpath-match query
                                                  current-query-raw
