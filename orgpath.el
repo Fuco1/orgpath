@@ -35,6 +35,9 @@
 ;; For complete description see https://github.com/Fuco1/orgpath
 
 ;;; Code:
+(require 'dash)
+(require 's)
+(require 'org)
 
 (defun orgpath-get (&optional query)
   (save-excursion
