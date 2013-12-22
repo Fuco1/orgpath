@@ -1,13 +1,46 @@
+;;; orgpath.el --- XPath-like selection for org-mode.
+
+;; Copyright (C) 2013 Matus Goljer
+
+;; Author: Matus Goljer <matus.goljer@gmail.com>
+;; Maintainer: Matus Goljer <matus.goljer@gmail.com>
+;; Version: 0.1
+;; Created: 22nd December 2013
+;; Keywords: org
+;; Package-Requires: ((dash "2.4.0") (s "1.8.0"))
+;; URL: https://github.com/Fuco1/orgpath
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; This package provides XPath-like navigation for org-mode.
+;; Currently it is only an API for a programmer, later some other
+;; features, such as sparse displays based on the xpath query are
+;; planned.
+;;
+;; For complete description see https://github.com/Fuco1/orgpath
+
+;;; Code:
+
 (defun orgpath-get (&optional query)
   (save-excursion
     (let* ((query (if (not (s-prefix-p "/" query)) (concat "//" query) query))
            (parsed-query (orgpath-split query)))
-      ;; TODO: replace `org-element-parse-buffer' with something that
-      ;; adds only :begin and :raw-value properties to make it faster
-      (orgpath-filter parsed-query
-                      (orgpath-parse-buffer)
-                      ;; (cddr (org-element-parse-buffer 'headline))
-                      ))))
+      (orgpath-filter parsed-query (orgpath-parse-buffer)))))
 
 (defun orgpath-parse-buffer ()
   "Parse an `org-mode' buffer and return a tree structure
@@ -43,8 +76,6 @@ significantly faster."
             (add-to-end (cons it nil) stack)))
           (setq last-level current-level)))
       (cdr start))))
-
-(setq my-list '(("top1" 1) ("sub11" 2) ("sub111" 3) ("sub12" 2) ("sub13" 2) ("top2" 1) ("top3" 1) ("sub31" 2) ("sub32" 2) ("top4" 1)))
 
 ;; /foo/bar/baz -> split into (foo bar baz), turn that into regexps, search for such header hierarchy
 ;; /foo//baz -> // means any depth
@@ -159,12 +190,6 @@ significantly faster."
   (let* ((value (plist-get (cadr elem) (intern (concat ":" (upcase name))))))
     value))
 
-(defun -map-filter (pred fn list)
-  (-map fn (-filter pred list)))
-
-(defmacro --map-filter (pred-form fn-form list)
-  `(--map ,fn-form (--filter ,pred-form ,list)))
-
 (defun orgpath-split (string)
   (save-match-data
     (let (re)
@@ -184,12 +209,5 @@ significantly faster."
       (replace-match (concat "=\"" (match-string 1) "\"")))
     (buffer-string)))
 
-(defun s-replace-complex (needle replace string)
-  (with-temp-buffer
-    (insert string)
-    (while (re-search-forward needle nil t)
-      (replace-match ))
-    (buffer-string))
-  )
-
-(--map-filter (evenp it) (+ 1 it) '(1 2 3 4 5))
+(provide 'orgpath)
+;;; orgpath.el ends here
