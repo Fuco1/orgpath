@@ -39,11 +39,11 @@
 (require 's)
 (require 'org)
 
-(defun orgpath-get (&optional query)
+(defun orgpath-get (query &optional deep)
   (save-excursion
     (let* ((query (if (not (s-prefix-p "/" query)) (concat "//" query) query))
            (parsed-query (orgpath-split query)))
-      (orgpath-filter parsed-query (orgpath-parse-buffer)))))
+      (orgpath-filter parsed-query (orgpath-parse-buffer) deep))))
 
 (defun orgpath-parse-buffer ()
   "Parse an `org-mode' buffer and return a tree structure
@@ -112,7 +112,7 @@ significantly faster."
       (set-match-data (-map '1- last-match-data))
       (match-beginning 0))))
 
-(defun orgpath-filter (query struct)
+(defun orgpath-filter (query struct deep)
   (cond
    ((null query) struct)
    ;; otherwise filter
@@ -144,21 +144,28 @@ significantly faster."
                                                  current-query-attr
                                                  it))
                                 struct)))
-        (-keep
-         (lambda (headline)
-           (if (car headline)
-               (cond
-                ((orgpath-is-command (caar headline))
-                 (let ((command (orgpath-parse-command (caar headline))))
-                   (cons (cadr headline) (cons (caddr headline)
-                                               (progn
-                                                 (goto-char (plist-get (caddr headline) :begin))
-                                                 (funcall command (org-element-at-point)))))))
-                (t (--when-let (orgpath-filter (car headline) (cdddr headline))
-                     (cons (cadr headline) (cons (caddr headline) it)))))
-             (cdr headline)))
-         next-level)))))
+        (let ((re (-keep
+                   (lambda (headline)
+                     (if (car headline)
+                         (cond
+                          ((orgpath-is-command (caar headline))
+                           (let ((command (orgpath-parse-command (caar headline))))
+                             (-snoc (cons (cadr headline) (list (caddr headline)))
+                                    (progn
+                                      (goto-char (plist-get (caddr headline) :begin))
+                                      (funcall command (org-element-at-point))))))
+                          (t (--when-let (orgpath-filter (car headline) (cdddr headline) deep)
+                               (if (and (not deep)
+                                        (= (length (car headline)) (length query)))
+                                   (cons 'unwrap it)
+                                 (cons (cadr headline) (cons (caddr headline) it))))))
+                       (cdr headline)))
+                   next-level)))
+          (if (and (not deep) re)
+              (--mapcat (if (eq (car it) 'unwrap) (cdr it) (list it)) re)
+            re))))))
 
+;; TODO: refactor the common attribute part
 (defun orgpath-match (query query-raw query-re query-attr struct)
   (let ((header-name (plist-get (cadr struct) :raw-value)))
     (cond
@@ -166,7 +173,8 @@ significantly faster."
       (if (and (string-match-p query-re header-name)
                (if (not query-attr) t
                  (goto-char (plist-get (cadr struct) :begin))
-                 (let ((tags-list (org-get-tags-at)))
+                 (let ((tags-list (org-get-tags-at))
+                       (todo (org-get-todo-state)))
                    (eval query-attr))))
           (cons (cdr query) struct)
         (cons query struct)))
@@ -174,7 +182,9 @@ significantly faster."
       (when (and (string-match-p query-re header-name)
                  (if (not query-attr) t
                    (goto-char (plist-get (cadr struct) :begin))
-                   (eval query-attr)))
+                   (let ((tags-list (org-get-tags-at))
+                         (todo (org-get-todo-state)))
+                     (eval query-attr))))
         (cons (cdr query) struct))))))
 
 (defun orgpath-command-text (elem)
